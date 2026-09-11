@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Topper Vault — Admin</title>
+<script src="config.js"></script>
+<style>
+  :root{ --bg:#141119; --card:#1c1824; --line:rgba(233,224,255,.14); --ink0:#f2ecff; --ink2:#a99fc4; --accent:#ffb95c; --red:#ffb3ab; --teal:#5fd6b6; }
+  *{box-sizing:border-box;}
+  body{ background:var(--bg); color:var(--ink0); font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; margin:0; padding:32px 16px 80px; }
+  .wrap{ max-width:720px; margin:0 auto; }
+  h1{ font-size:22px; margin-bottom:4px; }
+  p.sub{ color:var(--ink2); margin-top:0; font-size:14px; line-height:1.5; }
+  .card{ background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; margin-top:20px; }
+  label{ display:block; font-size:13px; color:var(--ink2); margin-bottom:6px; }
+  input[type=password], input[type=text]{
+    width:100%; background:#0f0c14; border:1px solid var(--line); color:var(--ink0);
+    border-radius:8px; padding:10px 12px; font-size:14px; margin-bottom:16px;
+  }
+  input[type=file]{ margin-bottom:16px; color:var(--ink2); }
+  textarea{
+    width:100%; min-height:160px; background:#0f0c14; border:1px solid var(--line); color:var(--ink0);
+    border-radius:8px; padding:10px 12px; font-family:'JetBrains Mono',monospace; font-size:12px; margin-bottom:16px;
+  }
+  button{
+    background:var(--accent); color:#211c2c; border:none; border-radius:8px; padding:10px 18px;
+    font-size:14px; font-weight:600; cursor:pointer;
+  }
+  button:disabled{ opacity:.5; cursor:not-allowed; }
+  .msg{ margin-top:14px; font-size:13px; white-space:pre-wrap; word-break:break-word; }
+  .msg.ok{ color:var(--teal); }
+  .msg.err{ color:var(--red); }
+  .warn{ background:rgba(255,179,171,.08); border:1px solid rgba(255,179,171,.35); border-radius:10px; padding:12px 14px; font-size:13px; color:var(--ink2); margin-top:16px; }
+  code{ background:#0f0c14; padding:2px 5px; border-radius:4px; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Topper Vault — Admin</h1>
+  <p class="sub">Replace the live <code>index.html</code> on GitHub with a new file. This calls your Vercel backend, which commits the file to your GitHub repo — GitHub Pages then redeploys automatically (usually within a minute).</p>
+
+  <div class="card">
+    <label for="apiBase">Backend URL (from config.js)</label>
+    <input type="text" id="apiBase" placeholder="https://your-project.vercel.app">
+
+    <label for="token">Admin token</label>
+    <input type="password" id="token" placeholder="The ADMIN_TOKEN you set in Vercel">
+
+    <label for="fileInput">New HTML file</label>
+    <input type="file" id="fileInput" accept=".html,text/html">
+
+    <label for="preview">File preview (first 2,000 characters — read only)</label>
+    <textarea id="preview" readonly placeholder="Choose a file above…"></textarea>
+
+    <button id="publishBtn">Publish to GitHub</button>
+    <div id="msg" class="msg"></div>
+  </div>
+
+  <div class="warn">
+    <b>Size note:</b> Vercel serverless functions cap request bodies at roughly 4.5&nbsp;MB.
+    Large files (this vault's own <code>index.html</code> can be 10+&nbsp;MB once real data is
+    imported) may be rejected with a 413 error. For an update that big, push the file with git
+    instead:
+    <br><br>
+    <code>git add index.html &amp;&amp; git commit -m "update" &amp;&amp; git push</code>
+    <br><br>
+    Use this page for smaller edits/patches, or raise the limit yourself by proxying the upload
+    through Vercel Blob if you need this routinely for big files.
+  </div>
+</div>
+
+<script>
+(function(){
+  var apiBaseInput = document.getElementById('apiBase');
+  apiBaseInput.value = window.KOSHA_API_BASE || '';
+
+  var fileInput = document.getElementById('fileInput');
+  var preview = document.getElementById('preview');
+  var publishBtn = document.getElementById('publishBtn');
+  var msg = document.getElementById('msg');
+  var fileContent = null;
+
+  fileInput.addEventListener('change', function(){
+    var f = fileInput.files[0];
+    fileContent = null;
+    preview.value = '';
+    if(!f) return;
+    var reader = new FileReader();
+    reader.onload = function(e){
+      fileContent = e.target.result;
+      preview.value = fileContent.slice(0, 2000) + (fileContent.length > 2000 ? '\n…(truncated preview; full file will be sent)' : '');
+    };
+    reader.readAsText(f);
+  });
+
+  function setMsg(text, cls){
+    msg.textContent = text;
+    msg.className = 'msg ' + (cls || '');
+  }
+
+  publishBtn.addEventListener('click', function(){
+    var base = (apiBaseInput.value || '').replace(/\/+$/, '');
+    var token = document.getElementById('token').value;
+    if(!base){ setMsg('Set the backend URL first.', 'err'); return; }
+    if(!token){ setMsg('Enter the admin token.', 'err'); return; }
+    if(!fileContent){ setMsg('Choose an HTML file first.', 'err'); return; }
+
+    publishBtn.disabled = true;
+    setMsg('Publishing…');
+
+    fetch(base + '/api/admin/replace-html', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + token
+      },
+      body: JSON.stringify({ content: fileContent })
+    }).then(function(r){
+      return r.json().then(function(j){ return { ok: r.ok, status: r.status, body: j }; });
+    }).then(function(res){
+      publishBtn.disabled = false;
+      if(res.ok){
+        setMsg('✓ Published. Commit: ' + (res.body.commit || '(unknown)') + '\nGitHub Pages will redeploy shortly.', 'ok');
+      } else {
+        setMsg('✗ Failed (' + res.status + '): ' + (res.body && (res.body.error + (res.body.detail ? ' — ' + res.body.detail : '')) || 'unknown error'), 'err');
+      }
+    }).catch(function(err){
+      publishBtn.disabled = false;
+      setMsg('✗ Network error: ' + err.message, 'err');
+    });
+  });
+})();
+</script>
+</body>
+</html>
