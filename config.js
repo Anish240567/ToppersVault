@@ -11,4 +11,4 @@
    THIS browser (localStorage) and won't sync across devices
    or visitors.
 ============================================================ */
-window.KOSHA_API_BASE = "";
+window.KOSHA_API_BASE = "https://toppers-vault.vercel.app";
