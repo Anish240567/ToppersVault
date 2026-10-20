@@ -277,6 +277,17 @@ html::-webkit-scrollbar,body::-webkit-scrollbar{display:none;}
 .search-wrap input:focus{border-color:transparent;background:var(--surface-container-highest);box-shadow:0 4px 18px -6px rgba(0,0,0,.35);}
 .search-wrap svg{position:absolute;left:15px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--ink-3);stroke-linecap:round;stroke-linejoin:round;pointer-events:none;}
 .search-kbd{position:absolute;right:12px;top:50%;transform:translateY(-50%);font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--ink-3);border:1px solid var(--outline);padding:2px 7px;border-radius:var(--radius-pill);background:var(--surface-container);}
+.search-go{position:absolute;right:5px;top:50%;transform:translateY(-50%);border:0;cursor:pointer;background:var(--accent);color:#1a1205;font-weight:700;font-size:12px;letter-spacing:.02em;padding:7px 14px;border-radius:var(--radius-pill);font-family:inherit;}
+.search-go:hover{filter:brightness(1.08);}
+.search-go:active{transform:translateY(-50%) scale(.97);}
+.search-wrap.has-go input{padding-right:112px;}
+.search-wrap.has-go .search-kbd{right:84px;}
+.wiki-search-row{display:flex;gap:6px;margin-bottom:12px;}
+.wiki-search-row .wiki-search{margin-bottom:0;flex:1;min-width:0;width:auto;}
+.wiki-search-go{border:0;cursor:pointer;background:var(--accent);color:#1a1205;font-weight:700;font-size:12px;padding:0 12px;border-radius:var(--radius-sm);font-family:inherit;}
+.pdf-q-search-row{display:flex;gap:6px;margin-bottom:12px;}
+.pdf-q-search-row .pdf-q-search{margin-bottom:0;flex:1;min-width:0;width:auto;}
+.pdf-q-go{border:0;cursor:pointer;background:var(--accent);color:#1a1205;font-weight:700;font-size:12px;padding:0 12px;border-radius:var(--radius-sm);font-family:inherit;}
 .topbar-actions{display:flex;align-items:center;gap:8px;margin-left:auto;}
 .icon-btn{
   width:40px;height:40px;border-radius:14px;border:1px solid transparent;
@@ -910,10 +921,11 @@ input[type="file"].sr-only{position:absolute;width:1px;height:1px;overflow:hidde
   <!-- ===================== MAIN ===================== -->
   <div class="main">
     <header class="topbar">
-      <div class="search-wrap">
+      <div class="search-wrap has-go">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
-        <input id="globalSearch" type="text" placeholder="Search the archive — a topper, a subject, a rank, a year, or a question…" aria-label="Global search">
+        <input id="globalSearch" type="text" placeholder="Search the archive — a topper, a subject, a rank, a year, or a question…" aria-label="Global search" enterkeyhint="search" autocomplete="off">
         <span class="search-kbd">/</span>
+        <button type="button" class="search-go" id="globalSearchBtn" aria-label="Run search">Search</button>
       </div>
       <div class="topbar-actions">
         <div class="theme-menu" id="themeMenu">
@@ -1066,7 +1078,7 @@ input[type="file"].sr-only{position:absolute;width:1px;height:1px;overflow:hidde
     <div class="modal-body" id="previewBody">
       <div class="pdf-embed-wrap" id="pdfEmbedWrap"></div>
       <aside class="pdf-questions-panel" id="pdfQuestionsPanel">
-        <input class="pdf-q-search" id="pdfQSearch" type="text" placeholder="Search questions in this copy…">
+        <div class="pdf-q-search-row"><input class="pdf-q-search" id="pdfQSearch" type="text" placeholder="Search questions in this copy…" enterkeyhint="search" autocomplete="off"><button type="button" class="pdf-q-go" id="pdfQSearchBtn">Search</button></div>
         <div id="pdfQList"></div>
       </aside>
     </div>
@@ -1732,11 +1744,21 @@ window.addEventListener('hashchange', ()=>{ parseHash(); render(); syncTopNav();
 /* =====================================================================
    5. SEARCH / FILTER ENGINE
 ===================================================================== */
+const __hayCache = new WeakMap();
+function __copyHaystack(copy){
+  const qs = copy.questions || [];
+  const sig = qs.length + '|' + copy.filename + '|' + (copy.tags||[]).length + '|' + copy.paper;
+  const hit = __hayCache.get(copy);
+  if(hit && hit.sig === sig) return hit.hay;
+  const t = copy._topper;
+  const questionText = qs.map(item=>item.q).join(' ');
+  const hay = [t.name, 'AIR '+t.rank, String(t.year), t.optional_subject, t.language, copy.paper, copy.subject, ...(copy.tags||[]), copy.filename, questionText].join(' ').toLowerCase();
+  __hayCache.set(copy, {sig, hay});
+  return hay;
+}
 function matchesQuery(copy, q){
   if(!q) return true;
-  const t = copy._topper;
-  const questionText = (copy.questions||[]).map(item=>item.q).join(' ');
-  const hay = [t.name, 'AIR '+t.rank, String(t.year), t.optional_subject, t.language, copy.paper, copy.subject, ...copy.tags, copy.filename, questionText].join(' ').toLowerCase();
+  const hay = __copyHaystack(copy);
   const terms = q.toLowerCase().split(/\s+/).filter(Boolean);
   return terms.every(term => hay.includes(term));
 }
@@ -1998,9 +2020,12 @@ document.getElementById('pdfQuestionsToggle').onclick = function(){
   this.classList.toggle('active', isShown);
   if(isShown) document.getElementById('pdfQSearch').focus();
 };
-document.getElementById('pdfQSearch').addEventListener('input', e=>{
-  if(__pdfCurrentCopy) renderQuestionsPanel(__pdfCurrentCopy, e.target.value);
-});
+(function(){
+  const inp = document.getElementById('pdfQSearch');
+  const run = ()=>{ if(__pdfCurrentCopy) renderQuestionsPanel(__pdfCurrentCopy, inp.value.trim()); };
+  inp.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.isComposing){ e.preventDefault(); run(); } });
+  document.getElementById('pdfQSearchBtn').addEventListener('click', run);
+})();
 
 /* Mini window: shrink the preview into a small, draggable floating panel
    pinned to the bottom-right corner (resizable via native CSS `resize`),
@@ -2362,9 +2387,10 @@ function pageQuestions(){
   return `
     <div class="section-head"><h3>Question Index</h3><span class="result-count"><b>${filtered.length}</b> question${filtered.length===1?'':'s'} · <b>${groups.length}</b> topper${groups.length===1?'':'s'}</span></div>
     <p style="color:var(--ink-2);max-width:640px;margin-bottom:16px;">Every question that's been indexed down to the exact page, across every linked answer copy — grouped by topper. Click a row to expand it and see every subject and question inside that topper's copies.</p>
-    <div class="search-wrap" style="max-width:420px;margin-bottom:14px;">
+    <div class="search-wrap has-go" style="max-width:420px;margin-bottom:14px;">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg>
-      <input type="text" id="qSearchInput" placeholder="Search topper name or question text…" value="${escapeHtml(qState.query)}">
+      <input type="text" id="qSearchInput" placeholder="Search topper name or question text…" value="${escapeHtml(qState.query)}" enterkeyhint="search" autocomplete="off">
+      <button type="button" class="search-go" id="qSearchBtn" aria-label="Run search">Search</button>
     </div>
     <div class="chip-row" id="qSubjectChips" style="margin-bottom:18px;">
       ${subjects.map(s=>`<button class="chip ${s===qState.subject?'active-chip':''}" data-subject="${escapeHtml(s)}" style="${s===qState.subject?'border-color:var(--accent);color:var(--accent);':''}">${escapeHtml(s)}</button>`).join('')}
@@ -2508,21 +2534,16 @@ window.__qBulkCompare = () => {
 };
 function wireQuestionsPage(){
   const input = document.getElementById('qSearchInput');
-  let deb;
-  input.addEventListener('input', e=>{
-    clearTimeout(deb);
-    const v = e.target.value;
-    const cursorPos = e.target.selectionStart;
-    deb = setTimeout(()=>{
-      qState.query = v; qState.visible = 100;
-      renderRoute();
-      // Re-render replaces the input node, which drops focus — grab the
-      // fresh node and restore focus + caret position right away so typing
-      // isn't interrupted.
-      const el = document.getElementById('qSearchInput');
-      if(el){ el.focus(); const pos = Math.min(cursorPos, el.value.length); el.setSelectionRange(pos, pos); }
-    }, 200);
-  });
+  const runQ = ()=>{
+    const v = input.value;
+    if(v === qState.query) return;
+    qState.query = v; qState.visible = 100;
+    renderRoute();
+    const el = document.getElementById('qSearchInput');
+    if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); }
+  };
+  input.addEventListener('keydown', e=>{ if(e.key==='Enter' && !e.isComposing){ e.preventDefault(); runQ(); } });
+  document.getElementById('qSearchBtn').addEventListener('click', runQ);
   document.querySelectorAll('#qSubjectChips .chip').forEach(btn=>{
     btn.addEventListener('click', ()=>{ qState.subject = btn.dataset.subject; qState.visible = 100; renderRoute(); });
   });
@@ -3408,16 +3429,17 @@ document.querySelectorAll('.nav-item, .bottom-nav button').forEach(btn=>{
   });
 });
 
-let searchDebounce;
-document.getElementById('globalSearch').addEventListener('input', e=>{
-  clearTimeout(searchDebounce);
-  const v = e.target.value;
-  searchDebounce = setTimeout(()=>{
-    state.query = v;
-    if(state.route!=='browse' && state.route!=='search'){ state.route='browse'; }
-    writeHash(); renderRoute(); syncTopNav();
-  }, 220);
+function runGlobalSearch(){
+  const v = document.getElementById('globalSearch').value;
+  if(v === state.query && (state.route==='browse' || state.route==='search')) return; // nothing new to search
+  state.query = v;
+  if(state.route!=='browse' && state.route!=='search'){ state.route='browse'; }
+  writeHash(); renderRoute(); syncTopNav();
+}
+document.getElementById('globalSearch').addEventListener('keydown', e=>{
+  if(e.key==='Enter' && !e.isComposing){ e.preventDefault(); runGlobalSearch(); }
 });
+document.getElementById('globalSearchBtn').addEventListener('click', runGlobalSearch);
 
 document.addEventListener('click', e=>{
   const stepBtn = e.target.closest('.num-step-btn');
@@ -4015,7 +4037,7 @@ function wikiRenderEthics(){
       <div class="wiki-side ${wikiState.pickOpen?'open':''}">
         <button class="wiki-pick" onclick="__wikiTogglePick()"><span class="wp-l"><small>Choose value</small><b>${wikiEscape(val.name)}</b></span><span class="wp-ch">&#9662;</span></button>
         <div class="wiki-side-body">
-        <input class="wiki-search" placeholder="Search values..." value="${wikiEscape(wikiState.search)}" oninput="__wikiSearch(this.value)">
+        <div class="wiki-search-row"><input class="wiki-search" placeholder="Search values..." value="${wikiEscape(wikiState.search)}" onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();__wikiSearch(this.value);}"><button type="button" class="wiki-search-go" onclick="__wikiSearch(this.parentNode.querySelector('.wiki-search').value)">Search</button></div>
         ${ETHICS_WIKI.map((c,ci)=>{
           const vals = c.values.filter(v=>!q || v.name.toLowerCase().includes(q));
           if(!vals.length) return '';
@@ -4099,7 +4121,7 @@ function wikiRenderEssay(){
       <div class="wiki-side ${wikiState.pickOpen?'open':''}">
         <button class="wiki-pick" onclick="__wikiTogglePick()"><span class="wp-l"><small>Choose theme</small><b>${wikiEscape(th.name)}</b></span><span class="wp-ch">&#9662;</span></button>
         <div class="wiki-side-body">
-        <input class="wiki-search" placeholder="Search themes..." value="${wikiEscape(wikiState.search)}" oninput="__wikiSearch(this.value)">
+        <div class="wiki-search-row"><input class="wiki-search" placeholder="Search themes..." value="${wikiEscape(wikiState.search)}" onkeydown="if(event.key==='Enter'&&!event.isComposing){event.preventDefault();__wikiSearch(this.value);}"><button type="button" class="wiki-search-go" onclick="__wikiSearch(this.parentNode.querySelector('.wiki-search').value)">Search</button></div>
         ${ESSAY_WIKI.map((c,ci)=>{
           return `
             <div class="wiki-cat-label">${wikiEscape(c.category)}</div>
